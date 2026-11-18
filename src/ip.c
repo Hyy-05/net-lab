@@ -41,11 +41,8 @@ void ip_in(buf_t *buf, uint8_t *src_mac) {
         buf->len = total_len; 
     }
 
-    // 5. IP 头部校验和检查（将头部校验和置 0，计算后与原值比对）
-    uint16_t original_chksum = ip_hdr->hdr_checksum16;
-    ip_hdr->hdr_checksum16 = 0;
+    // 5. IP 头部校验和检查
     uint16_t calc_chksum = checksum16((uint16_t *)ip_hdr, hdr_len);
-    ip_hdr->hdr_checksum16 = original_chksum;
     if (calc_chksum != 0) { 
         // 如果计算结果不为 0，说明校验失败，丢弃
         return;
@@ -63,7 +60,11 @@ void ip_in(buf_t *buf, uint8_t *src_mac) {
 
     // 8. 移除 IP 头部，调用 net_in 传递数据给上层
     buf_remove_header(buf, hdr_len);
-    net_in(buf, protocol, src_ip);
+    if (net_in(buf, protocol, src_ip) < 0) {
+    // 上层协议未注册处理器，恢复 IP 头并回送协议不可达
+    buf_add_header(buf, hdr_len);
+    icmp_unreachable(buf, src_ip, ICMP_CODE_PROTOCOL_UNREACH);
+    }
 }
 /**
  * @brief 处理一个要发送的ip分片
